@@ -6,6 +6,7 @@ import type {
   Secret,
   GitHubPublicKey,
   VariableVisibility,
+  Webhook,
 } from "@/lib/types";
 
 // ─────────────────────────────────────────────────────────────
@@ -232,6 +233,127 @@ export class GitHubAPI {
   async deleteOrgSecret(org: string, name: string): Promise<void> {
     await this.client.delete(`/orgs/${org}/actions/secrets/${name}`);
   }
+
+  // ── Repo Webhooks ──────────────────────────────────────────
+  async listRepoWebhooks(owner: string, repo: string): Promise<Webhook[]> {
+    const { data } = await this.client.get(`/repos/${owner}/${repo}/hooks`);
+    return data.map(mapGHHook);
+  }
+
+  async createRepoWebhook(
+    owner: string,
+    repo: string,
+    config: {
+      url: string;
+      content_type?: "json" | "form";
+      secret?: string;
+      insecure_ssl?: "0" | "1";
+    },
+    events: string[] = ["push"],
+    active = true
+  ): Promise<Webhook> {
+    const { data } = await this.client.post(`/repos/${owner}/${repo}/hooks`, {
+      name: "web",
+      active,
+      events,
+      config: {
+        url: config.url,
+        content_type: config.content_type || "json",
+        secret: config.secret,
+        insecure_ssl: config.insecure_ssl || "0",
+      },
+    });
+    return mapGHHook(data);
+  }
+
+  async updateRepoWebhook(
+    owner: string,
+    repo: string,
+    hookId: number | string,
+    config: {
+      url?: string;
+      content_type?: "json" | "form";
+      secret?: string;
+      insecure_ssl?: "0" | "1";
+    },
+    events?: string[],
+    active?: boolean
+  ): Promise<Webhook> {
+    const { data } = await this.client.patch(`/repos/${owner}/${repo}/hooks/${hookId}`, {
+      active,
+      events,
+      config: {
+        url: config.url,
+        content_type: config.content_type,
+        secret: config.secret,
+        insecure_ssl: config.insecure_ssl,
+      },
+    });
+    return mapGHHook(data);
+  }
+
+  async deleteRepoWebhook(owner: string, repo: string, hookId: number | string): Promise<void> {
+    await this.client.delete(`/repos/${owner}/${repo}/hooks/${hookId}`);
+  }
+
+  // ── Branches ──────────────────────────────────────────────
+  async listBranches(owner: string, repo: string): Promise<{ name: string; protected: boolean }[]> {
+    const { data } = await this.client.get(`/repos/${owner}/${repo}/branches`, {
+      params: { per_page: 100 },
+    });
+    return data.map((b: any) => ({ name: b.name, protected: b.protected }));
+  }
+
+  async createBranch(owner: string, repo: string, branchName: string, fromRef: string): Promise<void> {
+    // Resolve the SHA of the source ref
+    let sha: string;
+    try {
+      const { data } = await this.client.get(`/repos/${owner}/${repo}/git/ref/heads/${fromRef}`);
+      sha = data.object.sha;
+    } catch {
+      // Maybe it's a tag
+      const { data } = await this.client.get(`/repos/${owner}/${repo}/git/ref/tags/${fromRef}`);
+      sha = data.object.sha;
+    }
+    await this.client.post(`/repos/${owner}/${repo}/git/refs`, {
+      ref: `refs/heads/${branchName}`,
+      sha,
+    });
+  }
+
+  async deleteBranch(owner: string, repo: string, branchName: string): Promise<void> {
+    await this.client.delete(`/repos/${owner}/${repo}/git/refs/heads/${branchName}`);
+  }
+
+  async createPullRequest(
+    owner: string,
+    repo: string,
+    title: string,
+    head: string,
+    base: string,
+    body = "",
+    draft = false
+  ): Promise<{ number: number; html_url: string }> {
+    const { data } = await this.client.post(`/repos/${owner}/${repo}/pulls`, {
+      title,
+      head,
+      base,
+      body,
+      draft,
+    });
+    return { number: data.number, html_url: data.html_url };
+  }
+
+  async mergePullRequest(
+    owner: string,
+    repo: string,
+    pullNumber: number,
+    mergeMethod: "merge" | "squash" | "rebase" = "merge"
+  ): Promise<void> {
+    await this.client.put(`/repos/${owner}/${repo}/pulls/${pullNumber}/merge`, {
+      merge_method: mergeMethod,
+    });
+  }
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -264,5 +386,18 @@ function mapSecret(s: Record<string, unknown>): Secret {
     createdAt: s.created_at as string | undefined,
     updatedAt: s.updated_at as string | undefined,
     visibility: s.visibility as VariableVisibility | undefined,
+  };
+}
+
+function mapGHHook(h: any): Webhook {
+  return {
+    id: h.id,
+    url: h.config.url,
+    platform: "github",
+    active: h.active,
+    events: h.events,
+    contentType: h.config.content_type === "json" ? "json" : "form",
+    insecureSsl: h.config.insecure_ssl === "1",
+    createdAt: h.created_at,
   };
 }

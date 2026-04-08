@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Settings, Shield, Variable, Layers, Zap } from "lucide-react";
+import { Settings, Shield, Variable, Layers, Zap, Globe } from "lucide-react";
 import { useAppStore } from "@/lib/store/useStore";
 import { GithubIcon } from "@/components/shared/GithubIcon";
 
@@ -12,6 +12,7 @@ const navItems = [
     items: [
       { name: "Variables", href: "/repos/variables", icon: Variable },
       { name: "Secrets", href: "/repos/secrets", icon: Shield },
+      { name: "Webhooks", href: "/repos/webhooks", icon: Globe },
     ],
   },
   {

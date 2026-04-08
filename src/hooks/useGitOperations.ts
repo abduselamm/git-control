@@ -389,5 +389,347 @@ export function useBulkDeleteSecret() {
   });
 }
 
+// ─────────────────────────────────────────────
+// Repo Webhooks
+// ─────────────────────────────────────────────
+export function useRepoWebhooks(owner: string, repo: string) {
+  const platform = useAppStore((s) => s.platform);
+  const github = useGitHubClient();
+  const gitlab = useGitLabClient();
 
+  return useQuery({
+    queryKey: ["repo-webhooks", platform, owner, repo],
+    queryFn: () =>
+      platform === "github"
+        ? github.listRepoWebhooks(owner, repo)
+        : gitlab.listProjectHooks(`${owner}/${repo}`),
+    enabled: !!owner && !!repo,
+  });
+}
 
+export function useBulkPropagateWebhook() {
+  const platform = useAppStore((s) => s.platform);
+  const github = useGitHubClient();
+  const gitlab = useGitLabClient();
+
+  return useMutation({
+    mutationFn: async ({
+      repos,
+      url,
+      secret,
+      contentType,
+      insecureSsl,
+      events,
+    }: {
+      repos: Repository[];
+      url: string;
+      secret?: string;
+      contentType?: "json" | "form";
+      insecureSsl?: boolean;
+      events?: string[];
+    }) => {
+      const results = await Promise.allSettled(
+        repos.map(async (r) => {
+          const [owner, name] = r.fullName.split("/");
+          const id = r.id;
+
+          try {
+            // 1. Check for existing hook with same URL
+            const existing =
+              platform === "github"
+                ? await github.listRepoWebhooks(owner, name)
+                : await gitlab.listProjectHooks(id);
+
+            const match = existing.find((h) => h.url === url);
+
+            if (match) {
+              // Update
+              return platform === "github"
+                ? github.updateRepoWebhook(
+                    owner,
+                    name,
+                    match.id as number,
+                    {
+                      url,
+                      secret,
+                      content_type: contentType,
+                      insecure_ssl: insecureSsl ? "1" : "0",
+                    },
+                    events
+                  )
+                : gitlab.updateProjectHook(
+                    id,
+                    match.id as number,
+                    url,
+                    { secret, enable_ssl_verification: !insecureSsl },
+                    events
+                  );
+            } else {
+              // Create
+              return platform === "github"
+                ? github.createRepoWebhook(
+                    owner,
+                    name,
+                    {
+                      url,
+                      content_type: contentType,
+                      secret,
+                      insecure_ssl: insecureSsl ? "1" : "0",
+                    },
+                    events
+                  )
+                : gitlab.createProjectHook(
+                    id,
+                    url,
+                    { secret, enable_ssl_verification: !insecureSsl },
+                    events
+                  );
+            }
+          } catch (e: any) {
+            throw e;
+          }
+        })
+      );
+      return results;
+    },
+  });
+}
+
+export function useBulkDeleteWebhook() {
+  const platform = useAppStore((s) => s.platform);
+  const github = useGitHubClient();
+  const gitlab = useGitLabClient();
+
+  return useMutation({
+    mutationFn: async ({ repos, url }: { repos: Repository[]; url: string }) => {
+      const results = await Promise.allSettled(
+        repos.map(async (r) => {
+          const [owner, name] = r.fullName.split("/");
+          const id = r.id;
+
+          try {
+            // 1. List hooks to find the ID by URL
+            const existing =
+              platform === "github"
+                ? await github.listRepoWebhooks(owner, name)
+                : await gitlab.listProjectHooks(id);
+
+            const match = existing.find((h) => h.url === url);
+
+            if (match) {
+              return platform === "github"
+                ? github.deleteRepoWebhook(owner, name, match.id as number)
+                : gitlab.deleteProjectHook(id, match.id as number);
+            }
+            return { skipped: true, message: "Webhook not found" };
+          } catch (e: any) {
+             if (e.response?.status === 404 || e.response?.status === 405) {
+                return { skipped: true, message: "Webhook not found" };
+             }
+             throw e;
+          }
+        })
+      );
+      return results;
+    },
+  });
+}
+
+export function useCreateRepoWebhook(owner: string, repo: string) {
+  const platform = useAppStore((s) => s.platform);
+  const github = useGitHubClient();
+  const gitlab = useGitLabClient();
+  const qc = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ url, secret, contentType, insecureSsl, events }: { 
+      url: string; 
+      secret?: string; 
+      contentType?: "json" | "form"; 
+      insecureSsl?: boolean; 
+      events?: string[] 
+    }) => {
+      return platform === "github"
+        ? await github.createRepoWebhook(owner, repo, { url, secret, content_type: contentType, insecure_ssl: insecureSsl ? "1" : "0" }, events)
+        : await gitlab.createProjectHook(`${owner}/${repo}`, url, { secret, enable_ssl_verification: !insecureSsl }, events);
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["repo-webhooks", platform, owner, repo] });
+    },
+  });
+}
+
+export function useUpdateRepoWebhook(owner: string, repo: string) {
+  const platform = useAppStore((s) => s.platform);
+  const github = useGitHubClient();
+  const gitlab = useGitLabClient();
+  const qc = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ id, url, secret, contentType, insecureSsl, events }: { 
+      id: number;
+      url: string; 
+      secret?: string; 
+      contentType?: "json" | "form"; 
+      insecureSsl?: boolean; 
+      events?: string[] 
+    }) => {
+      return platform === "github"
+        ? await github.updateRepoWebhook(owner, repo, id, { url, secret, content_type: contentType, insecure_ssl: insecureSsl ? "1" : "0" }, events)
+        : await gitlab.updateProjectHook(`${owner}/${repo}`, id, url, { secret, enable_ssl_verification: !insecureSsl }, events);
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["repo-webhooks", platform, owner, repo] });
+    },
+  });
+}
+
+export function useDeleteRepoWebhook(owner: string, repo: string) {
+  const platform = useAppStore((s) => s.platform);
+  const github = useGitHubClient();
+  const gitlab = useGitLabClient();
+  const qc = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (id: number) => {
+      return platform === "github"
+        ? await github.deleteRepoWebhook(owner, repo, id)
+        : await gitlab.deleteProjectHook(`${owner}/${repo}`, id);
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["repo-webhooks", platform, owner, repo] });
+    },
+  });
+}
+
+// ─────────────────────────────────────────────
+// Repo Branches
+// ─────────────────────────────────────────────
+export function useRepoBranches(owner: string, repo: string) {
+  const platform = useAppStore((s) => s.platform);
+  const github = useGitHubClient();
+  const gitlab = useGitLabClient();
+
+  return useQuery({
+    queryKey: ["repo-branches", platform, owner, repo],
+    queryFn: () =>
+      platform === "github"
+        ? github.listBranches(owner, repo)
+        : gitlab.listBranches(`${owner}/${repo}`),
+    enabled: !!owner && !!repo,
+  });
+}
+
+// ─────────────────────────────────────────────
+// Bulk Branch Operations
+// ─────────────────────────────────────────────
+export function useBulkCreateBranch() {
+  const platform = useAppStore((s) => s.platform);
+  const github = useGitHubClient();
+  const gitlab = useGitLabClient();
+
+  return useMutation({
+    mutationFn: async ({
+      repos,
+      branchName,
+      fromRef,
+    }: {
+      repos: Repository[];
+      branchName: string;
+      fromRef: string;
+    }) => {
+      return Promise.allSettled(
+        repos.map(async (r) => {
+          const [owner, repo] = r.fullName.split("/");
+          if (platform === "github") {
+            await github.createBranch(owner, repo, branchName, fromRef);
+          } else {
+            await gitlab.createBranch(r.id, branchName, fromRef);
+          }
+        })
+      );
+    },
+  });
+}
+
+export function useBulkDeleteBranch() {
+  const platform = useAppStore((s) => s.platform);
+  const github = useGitHubClient();
+  const gitlab = useGitLabClient();
+
+  return useMutation({
+    mutationFn: async ({
+      repos,
+      branchName,
+    }: {
+      repos: Repository[];
+      branchName: string;
+    }) => {
+      return Promise.allSettled(
+        repos.map(async (r) => {
+          const [owner, repo] = r.fullName.split("/");
+          try {
+            if (platform === "github") {
+              await github.deleteBranch(owner, repo, branchName);
+            } else {
+              await gitlab.deleteBranch(r.id, branchName);
+            }
+          } catch (e: any) {
+            if (e.response?.status === 404) {
+              return { skipped: true, message: "Branch not found" };
+            }
+            throw e;
+          }
+        })
+      );
+    },
+  });
+}
+
+// ─────────────────────────────────────────────
+// Bulk Merge (create PR / MR)
+// ─────────────────────────────────────────────
+export function useBulkMerge() {
+  const platform = useAppStore((s) => s.platform);
+  const github = useGitHubClient();
+  const gitlab = useGitLabClient();
+
+  return useMutation({
+    mutationFn: async ({
+      repos,
+      sourceBranch,
+      targetBranch,
+      title,
+      squash,
+      autoMerge,
+      mergeMethod,
+    }: {
+      repos: Repository[];
+      sourceBranch: string;
+      targetBranch: string;
+      title: string;
+      squash?: boolean;
+      autoMerge?: boolean;
+      mergeMethod?: "merge" | "squash" | "rebase";
+    }) => {
+      return Promise.allSettled(
+        repos.map(async (r) => {
+          const [owner, repo] = r.fullName.split("/");
+          if (platform === "github") {
+            const pr = await github.createPullRequest(owner, repo, title, sourceBranch, targetBranch, "", false);
+            if (autoMerge) {
+              await github.mergePullRequest(owner, repo, pr.number, mergeMethod ?? (squash ? "squash" : "merge"));
+            }
+            return pr;
+          } else {
+            const mr = await gitlab.createMergeRequest(r.id, title, sourceBranch, targetBranch, "", squash ?? false);
+            if (autoMerge) {
+              await gitlab.acceptMergeRequest(r.id, mr.iid, squash ?? false);
+            }
+            return mr;
+          }
+        })
+      );
+    },
+  });
+}

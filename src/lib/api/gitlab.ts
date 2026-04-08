@@ -1,5 +1,5 @@
 import axios, { AxiosInstance } from "axios";
-import type { Repository, Variable, Secret } from "@/lib/types";
+import type { Repository, Variable, Secret, Webhook } from "@/lib/types";
 
 // ─────────────────────────────────────────────────────────────
 // Factory
@@ -184,6 +184,128 @@ export class GitLabAPI {
     const all = await this.listGroupVariables(group);
     return all.filter((v) => v.masked);
   }
+
+  // ── Project Webhooks ─────────────────────────────────────────
+  async listProjectHooks(projectId: string | number): Promise<Webhook[]> {
+    const { data } = await this.client.get(`/projects/${projectId}/hooks`);
+    return data.map(mapGLHook);
+  }
+
+  async createProjectHook(
+    projectId: string | number,
+    url: string,
+    config: {
+      secret?: string;
+      enable_ssl_verification?: boolean;
+    },
+    events: string[] = ["push"]
+  ): Promise<Webhook> {
+    const body: any = {
+      url,
+      token: config.secret,
+      enable_ssl_verification: config.enable_ssl_verification ?? true,
+    };
+
+    if (events.includes("push")) body.push_events = true;
+    if (events.includes("issues")) body.issues_events = true;
+    if (events.includes("merge_requests")) body.merge_requests_events = true;
+    if (events.includes("tag_push")) body.tag_push_events = true;
+    if (events.includes("note")) body.note_events = true;
+    if (events.includes("job")) body.job_events = true;
+    if (events.includes("pipeline")) body.pipeline_events = true;
+    if (events.includes("wiki_page")) body.wiki_page_events = true;
+
+    const { data } = await this.client.post(`/projects/${projectId}/hooks`, body);
+    return mapGLHook(data);
+  }
+
+  async updateProjectHook(
+    projectId: string | number,
+    hookId: number | string,
+    url?: string,
+    config?: {
+      secret?: string;
+      enable_ssl_verification?: boolean;
+    },
+    events?: string[]
+  ): Promise<Webhook> {
+    const body: any = {
+      url,
+      token: config?.secret,
+      enable_ssl_verification: config?.enable_ssl_verification,
+    };
+
+    if (events) {
+       body.push_events = events.includes("push");
+       body.issues_events = events.includes("issues");
+       body.merge_requests_events = events.includes("merge_requests");
+       body.tag_push_events = events.includes("tag_push");
+       body.note_events = events.includes("note");
+       body.job_events = events.includes("job");
+       body.pipeline_events = events.includes("pipeline");
+       body.wiki_page_events = events.includes("wiki_page");
+    }
+
+    const { data } = await this.client.put(`/projects/${projectId}/hooks/${hookId}`, body);
+    return mapGLHook(data);
+  }
+
+  async deleteProjectHook(projectId: string | number, hookId: number | string): Promise<void> {
+    await this.client.delete(`/projects/${projectId}/hooks/${hookId}`);
+  }
+
+  // ── Branches ──────────────────────────────────────────────
+  async listBranches(projectId: string | number): Promise<{ name: string; protected: boolean; default: boolean }[]> {
+    const { data } = await this.client.get(`/projects/${encodeURIComponent(String(projectId))}/repository/branches`, {
+      params: { per_page: 100 },
+    });
+    return data.map((b: any) => ({ name: b.name, protected: b.protected, default: b.default }));
+  }
+
+  async createBranch(projectId: string | number, branchName: string, ref: string): Promise<void> {
+    await this.client.post(`/projects/${encodeURIComponent(String(projectId))}/repository/branches`, {
+      branch: branchName,
+      ref,
+    });
+  }
+
+  async deleteBranch(projectId: string | number, branchName: string): Promise<void> {
+    await this.client.delete(
+      `/projects/${encodeURIComponent(String(projectId))}/repository/branches/${encodeURIComponent(branchName)}`
+    );
+  }
+
+  async createMergeRequest(
+    projectId: string | number,
+    title: string,
+    sourceBranch: string,
+    targetBranch: string,
+    description = "",
+    squash = false
+  ): Promise<{ iid: number; web_url: string }> {
+    const { data } = await this.client.post(
+      `/projects/${encodeURIComponent(String(projectId))}/merge_requests`,
+      {
+        title,
+        source_branch: sourceBranch,
+        target_branch: targetBranch,
+        description,
+        squash,
+      }
+    );
+    return { iid: data.iid, web_url: data.web_url };
+  }
+
+  async acceptMergeRequest(
+    projectId: string | number,
+    mergeRequestIid: number,
+    squash = false
+  ): Promise<void> {
+    await this.client.put(
+      `/projects/${encodeURIComponent(String(projectId))}/merge_requests/${mergeRequestIid}/merge`,
+      { squash, should_remove_source_branch: false }
+    );
+  }
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -208,5 +330,28 @@ function mapGLVariable(v: Record<string, unknown>): Variable {
     protected: v.protected as boolean,
     masked: v.masked as boolean,
     environment: v.environment_scope as string | undefined,
+  };
+}
+
+function mapGLHook(h: any): Webhook {
+  const events: string[] = [];
+  if (h.push_events) events.push("push");
+  if (h.issues_events) events.push("issues");
+  if (h.merge_requests_events) events.push("merge_requests");
+  if (h.tag_push_events) events.push("tag_push");
+  if (h.note_events) events.push("note");
+  if (h.job_events) events.push("job");
+  if (h.pipeline_events) events.push("pipeline");
+  if (h.wiki_page_events) events.push("wiki_page");
+
+  return {
+    id: h.id,
+    url: h.url,
+    platform: "gitlab",
+    active: true,
+    events,
+    contentType: "json",
+    insecureSsl: !h.enable_ssl_verification,
+    createdAt: h.created_at,
   };
 }

@@ -56,9 +56,46 @@ export interface Secret {
 }
 
 // ─────────────────────────────────────────────
+// Webhook
+// ─────────────────────────────────────────────
+export interface Webhook {
+  id?: number | string;
+  url: string;
+  platform: Platform;
+  active: boolean;
+  events: string[];      // Unified event names (e.g., 'push', 'issues')
+  contentType?: "json" | "form";
+  secret?: string;       // Write-only or masked
+  insecureSsl?: boolean;
+  createdAt?: string;
+}
+
+// ─────────────────────────────────────────────
 // Operations
 // ─────────────────────────────────────────────
-export type ItemType = "variable" | "secret";
+export type ItemType = "variable" | "secret" | "webhook" | "branch" | "merge";
+
+// ─────────────────────────────────────────────
+// Branch
+// ─────────────────────────────────────────────
+export interface Branch {
+  name: string;
+  protected?: boolean;
+  default?: boolean;
+}
+
+// ─────────────────────────────────────────────
+// Merge / Pull Request
+// ─────────────────────────────────────────────
+export interface MergeRequest {
+  id: number | string;
+  title: string;
+  url: string;
+  sourceBranch: string;
+  targetBranch: string;
+}
+
+
 
 export interface BulkOperationTarget {
   repo: Repository;
@@ -69,9 +106,10 @@ export interface BulkOperationTarget {
 export interface BulkOperation {
   type: "create" | "update" | "delete";
   itemType: ItemType;
-  key: string;
+  key: string;           // Key for variables/secrets, URL for webhooks
   value?: string;
   targets: BulkOperationTarget[];
+  webhookConfig?: Partial<Webhook>; // Extra config for webhooks
 }
 
 // ─────────────────────────────────────────────
@@ -90,3 +128,4 @@ export interface GitHubPublicKey {
   key_id: string;
   key: string;
 }
+
