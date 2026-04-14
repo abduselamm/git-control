@@ -35,7 +35,7 @@ interface PropagateResult {
   message?: string;
 }
 
-function RepoRowDetails({ repo, itemType }: { repo: Repository; itemType: ItemType }) {
+function RepoRowDetails({ repo, itemType, onItemClick }: { repo: Repository; itemType: ItemType; onItemClick?: (item: any) => void }) {
   const parts = repo.fullName.split("/");
   const owner = parts[0] || "";
   const name = parts.slice(1).join("/");
@@ -81,7 +81,8 @@ function RepoRowDetails({ repo, itemType }: { repo: Repository; itemType: ItemTy
           return (
             <span
               key={itemKey}
-              className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-mono font-medium bg-[hsl(var(--background))] border border-[hsl(var(--border))] text-[hsl(var(--foreground))]"
+              onClick={() => onItemClick?.(item)}
+              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-mono font-medium bg-[hsl(var(--background))] border border-[hsl(var(--border))] text-[hsl(var(--foreground))] ${onItemClick ? "cursor-pointer hover:border-[hsl(var(--foreground))] transition-colors" : ""}`}
             >
               {(itemType === "branch" || itemType === "merge") && (
                 <GitBranch size={10} className="shrink-0 text-[hsl(var(--muted-foreground))]" />
@@ -107,7 +108,8 @@ function RepoRow({
   isSelected,
   toggleRepo,
   result,
-  running
+  running,
+  onItemClick
 }: {
   repo: Repository;
   itemType: ItemType;
@@ -115,6 +117,7 @@ function RepoRow({
   toggleRepo: () => void;
   result?: PropagateResult;
   running: boolean;
+  onItemClick?: (item: any) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
 
@@ -175,7 +178,7 @@ function RepoRow({
       </div>
 
       {expanded && (
-        <RepoRowDetails repo={repo} itemType={itemType} />
+        <RepoRowDetails repo={repo} itemType={itemType} onItemClick={onItemClick} />
       )}
     </div>
   );
@@ -254,6 +257,28 @@ export default function BulkPropagatePage() {
     if (next.has(name)) next.delete(name);
     else next.add(name);
     setSelectedRepos(next);
+  }
+
+  function handleItemClick(item: any) {
+    if (itemType === "variable" || itemType === "secret") {
+      setKey(item.name || item.key || "");
+      setValue(itemType === "variable" ? (item.value || "") : ""); // value cannot be returned for secrets
+      setAction("upsert");
+    } else if (itemType === "webhook") {
+      setKey(item.url || "");
+      if (item.contentType) setWebhookContentType(item.contentType as "json" | "form");
+      setWebhookInsecureSsl(!!item.insecureSsl);
+      if (item.events) setWebhookEvents(item.events);
+      setValue(""); // secret is write-only
+      setAction("upsert");
+    } else if (itemType === "branch" || itemType === "merge") {
+      setKey(item.name || "");
+      setFromRef("main");
+      if (itemType === "merge") {
+        setSourceBranch(item.name || "");
+      }
+      setAction("upsert");
+    }
   }
 
   // Validate run button
@@ -871,6 +896,7 @@ export default function BulkPropagatePage() {
                     toggleRepo={() => toggleRepo(repo.name)}
                     result={results[repo.name]}
                     running={running}
+                    onItemClick={handleItemClick}
                   />
                 ))}
               </div>
