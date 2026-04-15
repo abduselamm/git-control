@@ -7,6 +7,7 @@ import { useGitHubClient } from "@/lib/api/factory";
 import { useGitLabClient } from "@/lib/api/factory";
 import { useAppStore } from "@/lib/store/useStore";
 import type { Variable, Repository } from "@/lib/types";
+import { normalizeUrl } from "@/lib/utils";
 
 // ─────────────────────────────────────────────
 // Repo Variables
@@ -449,8 +450,8 @@ export function useBulkPropagateWebhook() {
                 ? await github.listRepoWebhooks(owner, name)
                 : await gitlab.listProjectHooks(id);
 
-            const searchUrl = oldUrl || url;
-            const match = existing.find((h) => h.url === searchUrl);
+            const searchUrl = normalizeUrl(oldUrl || url);
+            const match = existing.find((h) => normalizeUrl(h.url) === searchUrl);
 
             if (match) {
               // Update
@@ -524,7 +525,8 @@ export function useBulkDeleteWebhook() {
                 ? await github.listRepoWebhooks(owner, name)
                 : await gitlab.listProjectHooks(id);
 
-            const match = existing.find((h) => h.url === url);
+            const searchUrl = normalizeUrl(url);
+            const match = existing.find((h) => normalizeUrl(h.url) === searchUrl);
 
             if (match) {
               return platform === "github"

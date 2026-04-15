@@ -38,3 +38,24 @@ export function parseRepoInput(input: string): { owner: string; repo: string } |
   }
   return null;
 }
+
+/**
+ * Normalizes a URL for comparison by:
+ * 1. Removing trailing slashes
+ * 2. Converting protocol and hostname to lowercase
+ */
+export function normalizeUrl(url: string): string {
+  if (!url) return "";
+  try {
+    const parsed = new URL(url);
+    // Remove trailing slash from pathname if it's more than just "/"
+    let pathname = parsed.pathname;
+    if (pathname.length > 1 && pathname.endsWith("/")) {
+      pathname = pathname.slice(0, -1);
+    }
+    return `${parsed.protocol}//${parsed.host}${pathname}${parsed.search}`;
+  } catch {
+    // Fallback if URL is invalid (e.g. some internal path)
+    return url.trim().replace(/\/+$/, "");
+  }
+}

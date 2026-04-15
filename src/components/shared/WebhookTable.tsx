@@ -9,7 +9,7 @@ import { useAppStore } from "@/lib/store/useStore";
 interface Props {
   rows: Webhook[];
   onEdit?: (row: Webhook) => void;
-  onDelete?: (id: number) => void;
+  onDelete?: (id: number | string) => void;
   loading?: boolean;
   emptyLabel?: string;
 }
@@ -118,7 +118,7 @@ export function WebhookTable({ rows, onEdit, onDelete, loading, emptyLabel }: Pr
                   )}
                   {onDelete && (
                     <button
-                      onClick={() => onDelete(Number(row.id))}
+                      onClick={() => onDelete(row.id!)}
                       className="p-2 rounded-xl transition-all hover:bg-red-500/10 hover:text-red-500"
                       style={{ color: "var(--text-muted)" }}
                       title="Delete"
