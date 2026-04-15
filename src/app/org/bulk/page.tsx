@@ -192,6 +192,7 @@ export default function BulkPropagatePage() {
   const [itemType, setItemType] = useState<ItemType>("variable");
   const [action, setAction] = useState<ActionType>("upsert");
   const [key, setKey] = useState(""); // variable key / secret name / webhook url / branch name
+  const [oldKey, setOldKey] = useState(""); // track original key to allow updates when key/url changes
   const [value, setValue] = useState(""); // variable value / secret value / webhook secret
   const [showValue, setShowValue] = useState(false);
   const [repoSearch, setRepoSearch] = useState("");
@@ -261,21 +262,27 @@ export default function BulkPropagatePage() {
 
   function handleItemClick(item: any) {
     if (itemType === "variable" || itemType === "secret") {
-      setKey(item.name || item.key || "");
+      const k = item.name || item.key || "";
+      setKey(k);
+      setOldKey(k);
       setValue(itemType === "variable" ? (item.value || "") : ""); // value cannot be returned for secrets
       setAction("upsert");
     } else if (itemType === "webhook") {
-      setKey(item.url || "");
+      const u = item.url || "";
+      setKey(u);
+      setOldKey(u);
       if (item.contentType) setWebhookContentType(item.contentType as "json" | "form");
       setWebhookInsecureSsl(!!item.insecureSsl);
       if (item.events) setWebhookEvents(item.events);
       setValue(""); // secret is write-only
       setAction("upsert");
     } else if (itemType === "branch" || itemType === "merge") {
-      setKey(item.name || "");
+      const b = item.name || "";
+      setKey(b);
+      setOldKey(b);
       setFromRef("main");
       if (itemType === "merge") {
-        setSourceBranch(item.name || "");
+        setSourceBranch(b);
       }
       setAction("upsert");
     }
@@ -322,7 +329,7 @@ export default function BulkPropagatePage() {
 
       if (itemType === "variable") {
         bulkResult = action === "upsert"
-          ? await propagateVar.mutateAsync({ repos: targetReposArray, key, value, masked: false })
+          ? await propagateVar.mutateAsync({ repos: targetReposArray, key, oldKey: oldKey || undefined, value, masked: false })
           : await deleteVar.mutateAsync({ repos: targetReposArray, key });
       } else if (itemType === "secret") {
         bulkResult = action === "upsert"
@@ -333,6 +340,7 @@ export default function BulkPropagatePage() {
           ? await propagateWh.mutateAsync({
               repos: targetReposArray,
               url: key,
+              oldUrl: oldKey || undefined,
               secret: value,
               contentType: webhookContentType,
               insecureSsl: webhookInsecureSsl,
@@ -466,7 +474,7 @@ export default function BulkPropagatePage() {
                   {typeItems.map((t) => (
                     <button
                       key={t.id}
-                      onClick={() => { setItemType(t.id); setResults({}); }}
+                      onClick={() => { setItemType(t.id); setResults({}); setKey(""); setOldKey(""); setValue(""); }}
                       className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-md text-sm font-medium capitalize transition-colors ${
                         itemType === t.id ? "shadow" : "hover:bg-[hsl(var(--background))/50]"
                       }`}
@@ -511,7 +519,12 @@ export default function BulkPropagatePage() {
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium mb-2 text-[hsl(var(--foreground))]">Key / Name</label>
+                    <div className="flex items-center justify-between mb-2">
+                       <label className="block text-sm font-medium text-[hsl(var(--foreground))]">Key / Name</label>
+                       {action === "upsert" && oldKey && oldKey !== key && (
+                         <span className="text-xs text-amber-500 font-medium">Updating existing: {oldKey}</span>
+                       )}
+                    </div>
                     <input
                       type="text"
                       value={key}
@@ -573,7 +586,14 @@ export default function BulkPropagatePage() {
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium mb-2 text-[hsl(var(--foreground))]">Payload URL</label>
+                    <div className="flex items-center justify-between mb-2">
+                      <label className="block text-sm font-medium text-[hsl(var(--foreground))]">Payload URL</label>
+                      {action === "upsert" && oldKey && oldKey !== key && (
+                        <span className="text-xs text-amber-500 font-medium max-w-[200px] truncate" title={oldKey}>
+                          Updating existing URL: <span className="font-mono">{oldKey}</span>
+                        </span>
+                      )}
+                    </div>
                     <input
                       type="text"
                       value={key}

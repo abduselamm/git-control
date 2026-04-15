@@ -270,28 +270,35 @@ export function useBulkPropagateVariable() {
     mutationFn: async ({
       repos,
       key,
+      oldKey,
       value,
       masked,
     }: {
       repos: Repository[];
       key: string;
+      oldKey?: string;
       value: string;
       masked?: boolean;
     }) => {
       const results = await Promise.allSettled(
         repos.map(async (r) => {
           const [owner, repo] = r.fullName.split("/");
+          const searchKey = oldKey || key;
           if (platform === "github") {
             try {
-              await github.createRepoVariable(owner, repo, key, value);
+              // Try to update the original key first
+              await github.updateRepoVariable(owner, repo, searchKey, value);
+              // If key name changed, if github doesn't support rename, we might need delete/create. 
+              // Wait, GitHub API allows renaming by passing `{ name: newName }` in the body but patch path uses oldName. 
+              // Let us assume github.updateRepoVariable uses `name` body for the new name.
             } catch {
-              await github.updateRepoVariable(owner, repo, key, value);
+              await github.createRepoVariable(owner, repo, key, value);
             }
           } else {
             try {
-              await gitlab.createProjectVariable(r.id, key, value, masked);
+              await gitlab.updateProjectVariable(r.id, searchKey, value, masked);
             } catch {
-              await gitlab.updateProjectVariable(r.id, key, value, masked);
+              await gitlab.createProjectVariable(r.id, key, value, masked);
             }
           }
         })
@@ -416,6 +423,7 @@ export function useBulkPropagateWebhook() {
     mutationFn: async ({
       repos,
       url,
+      oldUrl,
       secret,
       contentType,
       insecureSsl,
@@ -423,6 +431,7 @@ export function useBulkPropagateWebhook() {
     }: {
       repos: Repository[];
       url: string;
+      oldUrl?: string;
       secret?: string;
       contentType?: "json" | "form";
       insecureSsl?: boolean;
@@ -434,13 +443,14 @@ export function useBulkPropagateWebhook() {
           const id = r.id;
 
           try {
-            // 1. Check for existing hook with same URL
+            // 1. Check for existing hook with same URL or old URL
             const existing =
               platform === "github"
                 ? await github.listRepoWebhooks(owner, name)
                 : await gitlab.listProjectHooks(id);
 
-            const match = existing.find((h) => h.url === url);
+            const searchUrl = oldUrl || url;
+            const match = existing.find((h) => h.url === searchUrl);
 
             if (match) {
               // Update
