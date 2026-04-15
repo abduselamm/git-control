@@ -24,7 +24,7 @@ export default function RepoWebhooksPage() {
   const [search, setSearch] = useState("");
   const [formOpen, setFormOpen] = useState(false);
   const [editRow, setEditRow] = useState<Webhook | null>(null);
-  const [deleteId, setDeleteId] = useState<number | null>(null);
+  const [deleteId, setDeleteId] = useState<number | string | null>(null);
 
   const { data, isLoading, refetch } = useRepoWebhooks(owner, repo);
   const createMut = useCreateRepoWebhook(owner, repo);
@@ -40,7 +40,7 @@ export default function RepoWebhooksPage() {
     try {
       if (editRow) {
         await updateMut.mutateAsync({ 
-          id: Number(editRow.id), 
+          id: editRow.id!, 
           url: fd.url, 
           secret: fd.secret, 
           contentType: fd.contentType, 

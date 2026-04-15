@@ -579,7 +579,7 @@ export function useUpdateRepoWebhook(owner: string, repo: string) {
 
   return useMutation({
     mutationFn: async ({ id, url, secret, contentType, insecureSsl, events }: { 
-      id: number;
+      id: number | string;
       url: string; 
       secret?: string; 
       contentType?: "json" | "form"; 
@@ -603,7 +603,7 @@ export function useDeleteRepoWebhook(owner: string, repo: string) {
   const qc = useQueryClient();
 
   return useMutation({
-    mutationFn: async (id: number) => {
+    mutationFn: async (id: number | string) => {
       return platform === "github"
         ? await github.deleteRepoWebhook(owner, repo, id)
         : await gitlab.deleteProjectHook(`${owner}/${repo}`, id);
