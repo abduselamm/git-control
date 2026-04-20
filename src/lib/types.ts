@@ -87,12 +87,14 @@ export interface Branch {
 // ─────────────────────────────────────────────
 // Merge / Pull Request
 // ─────────────────────────────────────────────
-export interface MergeRequest {
+export interface PullRequest {
   id: number | string;
+  number: number;
   title: string;
   url: string;
   sourceBranch: string;
   targetBranch: string;
+  state: "open" | "closed" | "merged";
 }
 
 

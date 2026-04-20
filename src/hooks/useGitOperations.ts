@@ -633,6 +633,24 @@ export function useRepoBranches(owner: string, repo: string) {
 }
 
 // ─────────────────────────────────────────────
+// Repo PRs / MRs
+// ─────────────────────────────────────────────
+export function useRepoPRs(owner: string, repo: string) {
+  const platform = useAppStore((s) => s.platform);
+  const github = useGitHubClient();
+  const gitlab = useGitLabClient();
+
+  return useQuery({
+    queryKey: ["repo-prs", platform, owner, repo],
+    queryFn: () =>
+      platform === "github"
+        ? github.listPullRequests(owner, repo, "open")
+        : gitlab.listMergeRequests(`${owner}/${repo}`, "opened"),
+    enabled: !!owner && !!repo,
+  });
+}
+
+// ─────────────────────────────────────────────
 // Bulk Branch Operations
 // ─────────────────────────────────────────────
 export function useBulkCreateBranch() {
@@ -728,15 +746,54 @@ export function useBulkMerge() {
         repos.map(async (r) => {
           const [owner, repo] = r.fullName.split("/");
           if (platform === "github") {
-            const pr = await github.createPullRequest(owner, repo, title, sourceBranch, targetBranch, "", false);
+            let pr: { number: number; html_url: string; skipped?: boolean; message?: string };
+            try {
+              pr = await github.createPullRequest(owner, repo, title, sourceBranch, targetBranch, "", false);
+            } catch (e: any) {
+              const status = e.response?.status;
+              const msg: string = e.response?.data?.errors?.[0]?.message ?? e.response?.data?.message ?? "";
+              if (status === 422) {
+                // "A pull request already exists" or "No commits between X and Y"
+                const friendly = msg || "No diff or PR already exists";
+                return { skipped: true, message: friendly };
+              }
+              throw e;
+            }
             if (autoMerge) {
-              await github.mergePullRequest(owner, repo, pr.number, mergeMethod ?? (squash ? "squash" : "merge"));
+              try {
+                await github.mergePullRequest(owner, repo, pr.number, mergeMethod ?? (squash ? "squash" : "merge"));
+              } catch (mergeErr: any) {
+                const mergeStatus = mergeErr.response?.status;
+                const mergeMsg: string = mergeErr.response?.data?.message ?? "";
+                // 405 = not mergeable yet (CI / reviews pending), 422 = merge conflict
+                const hint = mergeStatus === 405
+                  ? "PR created — merge blocked (branch protection / CI pending)"
+                  : mergeStatus === 422
+                  ? "PR created — merge conflict"
+                  : `PR created — merge failed: ${mergeMsg}`;
+                return { ...pr, skipped: true, message: hint };
+              }
             }
             return pr;
           } else {
-            const mr = await gitlab.createMergeRequest(r.id, title, sourceBranch, targetBranch, "", squash ?? false);
+            let mr: any;
+            try {
+              mr = await gitlab.createMergeRequest(r.id, title, sourceBranch, targetBranch, "", squash ?? false);
+            } catch (e: any) {
+              const status = e.response?.status;
+              const msg: string = e.response?.data?.message ?? "";
+              if (status === 422 || (Array.isArray(e.response?.data?.message) && e.response.data.message.some((m: string) => m.includes("already exists")))) {
+                return { skipped: true, message: msg || "MR already exists or no diff" };
+              }
+              throw e;
+            }
             if (autoMerge) {
-              await gitlab.acceptMergeRequest(r.id, mr.iid, squash ?? false);
+              try {
+                await gitlab.acceptMergeRequest(r.id, mr.iid, squash ?? false);
+              } catch (mergeErr: any) {
+                const mergeMsg: string = mergeErr.response?.data?.message ?? "";
+                return { ...mr, skipped: true, message: `MR created — merge failed: ${mergeMsg}` };
+              }
             }
             return mr;
           }

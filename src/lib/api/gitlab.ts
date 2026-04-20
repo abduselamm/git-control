@@ -306,6 +306,21 @@ export class GitLabAPI {
       { squash, should_remove_source_branch: false }
     );
   }
+
+  async listMergeRequests(projectId: string | number, state: "opened" | "closed" | "merged" | "all" = "opened"): Promise<import("@/lib/types").PullRequest[]> {
+    const { data } = await this.client.get(`/projects/${encodeURIComponent(String(projectId))}/merge_requests`, {
+      params: { state, per_page: 100 },
+    });
+    return data.map((mr: any) => ({
+      id: mr.id,
+      number: mr.iid,
+      title: mr.title,
+      url: mr.web_url,
+      sourceBranch: mr.source_branch,
+      targetBranch: mr.target_branch,
+      state: mr.state === "opened" ? "open" : mr.state,
+    }));
+  }
 }
 
 // ─────────────────────────────────────────────────────────────

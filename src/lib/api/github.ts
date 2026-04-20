@@ -354,6 +354,21 @@ export class GitHubAPI {
       merge_method: mergeMethod,
     });
   }
+
+  async listPullRequests(owner: string, repo: string, state: "open" | "closed" | "all" = "open"): Promise<import("@/lib/types").PullRequest[]> {
+    const { data } = await this.client.get(`/repos/${owner}/${repo}/pulls`, {
+      params: { state, per_page: 100 },
+    });
+    return data.map((pr: any) => ({
+      id: pr.id,
+      number: pr.number,
+      title: pr.title,
+      url: pr.html_url,
+      sourceBranch: pr.head.ref,
+      targetBranch: pr.base.ref,
+      state: pr.state === "open" ? "open" : (pr.merged_at ? "merged" : "closed"),
+    }));
+  }
 }
 
 // ─────────────────────────────────────────────────────────────

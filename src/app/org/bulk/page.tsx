@@ -22,6 +22,7 @@ import {
   useBulkCreateBranch,
   useBulkDeleteBranch,
   useBulkMerge,
+  useRepoPRs,
 } from "@/hooks/useGitOperations";
 import type { Repository } from "@/lib/types";
 
@@ -39,16 +40,19 @@ function RepoRowDetails({ repo, itemType, onItemClick }: { repo: Repository; ite
   const parts = repo.fullName.split("/");
   const owner = parts[0] || "";
   const name = parts.slice(1).join("/");
+  const platform = useAppStore.getState().platform;
 
   const { data: vData, isLoading: vLoad } = useRepoVariables(owner, name);
   const { data: sData, isLoading: sLoad } = useRepoSecrets(owner, name);
   const { data: wData, isLoading: wLoad } = useRepoWebhooks(owner, name);
   const { data: bData, isLoading: bLoad } = useRepoBranches(owner, name);
+  const { data: prData, isLoading: prLoad } = useRepoPRs(owner, name);
 
   const variablesArray: any[] = Array.isArray(vData) ? vData : (vData as any)?.variables ?? [];
   const secretsArray: any[] = Array.isArray(sData) ? sData : (sData as any)?.secrets ?? [];
   const webhooksArray: any[] = Array.isArray(wData) ? wData : (wData as any)?.hooks ?? [];
   const branchesArray: any[] = Array.isArray(bData) ? bData : [];
+  const prsArray: any[] = Array.isArray(prData) ? prData : [];
 
   let items: any[] = [];
   let isLoading = false;
@@ -56,16 +60,18 @@ function RepoRowDetails({ repo, itemType, onItemClick }: { repo: Repository; ite
   if (itemType === "variable") { items = variablesArray; isLoading = vLoad; }
   else if (itemType === "secret") { items = secretsArray; isLoading = sLoad; }
   else if (itemType === "webhook") { items = webhooksArray; isLoading = wLoad; }
-  else if (itemType === "branch" || itemType === "merge") { items = branchesArray; isLoading = bLoad; }
+  else if (itemType === "branch") { items = branchesArray; isLoading = bLoad; }
+  else if (itemType === "merge") { items = prsArray; isLoading = prLoad; }
 
   if (isLoading) {
     return <div className="py-3 px-10 flex"><Loader2 size={14} className="animate-spin text-[hsl(var(--muted-foreground))]" /></div>;
   }
 
   if (items.length === 0) {
+    const typeLabel = itemType === "merge" ? (platform === "github" ? "open PRs" : "open MRs") : `${itemType}es`;
     return (
       <div className="py-3 px-10 text-xs text-[hsl(var(--muted-foreground))]">
-        No existing {itemType === "merge" ? "branch" : itemType}es found.
+        No existing {typeLabel} found.
       </div>
     );
   }
@@ -74,7 +80,8 @@ function RepoRowDetails({ repo, itemType, onItemClick }: { repo: Repository; ite
     <div className="py-3 px-10 bg-[hsl(var(--muted))/30] border-t border-[hsl(var(--border))]">
       <div className="flex flex-wrap gap-2">
         {items.map((item: any, idx: number) => {
-          const itemName = item.name || item.key || item.url || item.id?.toString() || "Unknown";
+          const isPR = itemType === "merge";
+          const itemName = isPR ? `#${item.number} ${item.sourceBranch} → ${item.targetBranch}` : (item.name || item.key || item.url || item.id?.toString() || "Unknown");
           const itemKey = item.id?.toString() || item.url || item.name || item.key || `idx-${idx}`;
           const isDefault = item.default;
           const isProtected = item.protected;
@@ -84,8 +91,11 @@ function RepoRowDetails({ repo, itemType, onItemClick }: { repo: Repository; ite
               onClick={() => onItemClick?.(item)}
               className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-mono font-medium bg-[hsl(var(--background))] border border-[hsl(var(--border))] text-[hsl(var(--foreground))] ${onItemClick ? "cursor-pointer hover:border-[hsl(var(--foreground))] transition-colors" : ""}`}
             >
-              {(itemType === "branch" || itemType === "merge") && (
+              {itemType === "branch" && (
                 <GitBranch size={10} className="shrink-0 text-[hsl(var(--muted-foreground))]" />
+              )}
+              {isPR && (
+                <GitMerge size={10} className="shrink-0 text-[hsl(var(--muted-foreground))]" />
               )}
               {itemName}
               {isDefault && (
@@ -276,14 +286,15 @@ export default function BulkPropagatePage() {
       if (item.events) setWebhookEvents(item.events);
       setValue(""); // secret is write-only
       setAction("upsert");
-    } else if (itemType === "branch" || itemType === "merge") {
+    } else if (itemType === "branch") {
       const b = item.name || "";
       setKey(b);
       setOldKey(b);
       setFromRef("main");
-      if (itemType === "merge") {
-        setSourceBranch(b);
-      }
+      setAction("upsert");
+    } else if (itemType === "merge") {
+      setSourceBranch(item.sourceBranch || "");
+      setTargetBranch(item.targetBranch || "");
       setAction("upsert");
     }
   }
